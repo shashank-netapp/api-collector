@@ -1,14 +1,18 @@
-package utlis
+package utils
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	. "github.com/theshashankpal/api-collector/logger"
 )
+
+var uf = LogFields{Key: "layer", Value: "utils"}
 
 func FindTheContentLength(reader *bufio.Reader) (int, error) {
 	var headers string
@@ -56,16 +60,16 @@ func ConstructRequest(requestJSON []byte) string {
 	return header + string(requestJSON)
 }
 
-func findTehDifference() {
+func FindTehDifference(ctx context.Context) {
 	file1, err := os.OpenFile("api.txt", os.O_RDONLY, 0644)
 	if err != nil {
-		log.Fatalf("failed opening file: %s", err)
+		Log(ctx, uf).Fatal().Msgf("failed opening file: %s", err)
 	}
 	defer file1.Close()
 
 	file2, err := os.OpenFile("api_Copy.txt", os.O_RDONLY, 0644)
 	if err != nil {
-		log.Fatalf("failed opening file: %s", err)
+		Log(ctx, uf).Fatal().Msgf("failed opening file: %s", err)
 	}
 	defer file2.Close()
 
@@ -100,15 +104,15 @@ func findTehDifference() {
 		list2 = append(list2, key)
 	}
 
-	missingElements := findMissingElements(list2, list1)
+	missingElements := FindMissingElements(list2, list1)
 	fmt.Println("Missing elements from list2 in list1:", missingElements)
 
-	missingElements = findMissingElements(list1, list2)
+	missingElements = FindMissingElements(list1, list2)
 	fmt.Println("Missing elements from list1 in list2:", missingElements)
 
 }
 
-func findMissingElements(list1, list2 []string) []string {
+func FindMissingElements(list1, list2 []string) []string {
 	elementMap := make(map[string]bool)
 	missingElements := []string{}
 
@@ -127,26 +131,27 @@ func findMissingElements(list1, list2 []string) []string {
 	return missingElements
 }
 
-func appendTofile(fileName, text string) {
-	// Open file in append mode, create it if it does not exist, open in write-only mode
-	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed opening file: %s", err)
-	}
-	defer file.Close()
+//func AppendTofile(ctx context.Context, text string, f os.File) error {
+//	// Open file in append mode, create it if it does not exist, open in write-only mode
+//	//file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+//	//if err != nil {
+//	//	log.Fatalf("failed opening file: %s", err)
+//	//}
+//	//defer file.Close()
+//
+//	// Write text to file
+//	_, err := f.WriteString(text + "\n") // Adding a newline for each text added
+//	if err != nil {
+//		Log(ctx, uf).Error().Msgf("failed writing to file: %s", err)
+//		return err
+//	}
+//}
 
-	// Write text to file
-	_, err = file.WriteString(text + "\n") // Adding a newline for each text added
-	if err != nil {
-		log.Fatalf("failed writing to file: %s", err)
-	}
-}
-
-func truncateFile(filePath string) {
+func TruncateFile(ctx context.Context, filePath string) {
 	// Open the file in write-only mode with the O_TRUNC flag to truncate it to zero length
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
-		log.Fatalf("failed to open file: %s", err)
+		Log(ctx, uf).Error().Msgf("failed truncating file: %s", err)
 	}
 	defer file.Close()
 }

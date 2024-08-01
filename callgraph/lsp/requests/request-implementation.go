@@ -46,32 +46,31 @@ func (r *ImplementationRequest) NewRequest(filePath string, line, character, id 
 	}
 }
 
-func (r *ImplementationRequest) SendRequest(requestChan chan Request) {
+func (r *ImplementationRequest) SendRequest(requestChan chan Request, responseChan chan map[string]interface{}) {
 	// Form the Request
-	r.responseChan = make(chan map[string]interface{})
 	request := Request{
 		request:      *r,
 		id:           r.ID,
-		responseChan: r.responseChan,
+		responseChan: responseChan,
 	}
 
 	// Send the request
 	requestChan <- request
 }
 
-func (r *ImplementationRequest) ReadResponse(responseChan chan *ImplementationResponse) {
-	response := <-r.responseChan
+func (r *ImplementationRequest) ReadResponse(implementationResponseChan chan *ImplementationResponse, responseChan chan map[string]interface{}) {
+	response := <-responseChan
 
 	bytes, err := json.Marshal(response)
 	if err != nil {
 		// handle error
-		tempImplementationResponse := &ImplementationResponse{
+		tempImplementationResponse := ImplementationResponse{
 			Error: &ResponseError{
 				Code:    JsonMarshalError,
 				Message: fmt.Sprintf("ImplementationResponse #ReadResponse: failed to marshal -> %v", err),
 			},
 		}
-		responseChan <- tempImplementationResponse
+		implementationResponseChan <- &tempImplementationResponse
 		return
 	}
 
@@ -79,21 +78,21 @@ func (r *ImplementationRequest) ReadResponse(responseChan chan *ImplementationRe
 	err = json.Unmarshal(bytes, &implementationResponse)
 	if err != nil {
 		// handle error
-		tempImplementationResponse := &ImplementationResponse{
+		tempImplementationResponse := ImplementationResponse{
 			Error: &ResponseError{
 				Code:    JsonUnMarshalError,
 				Message: fmt.Sprintf("ImplementationResponse #ReadResponse: failed to unmarshal -> %v", err),
 			},
 		}
-		responseChan <- tempImplementationResponse
+		implementationResponseChan <- &tempImplementationResponse
 		return
 	}
 
-	responseChan <- &implementationResponse
+	implementationResponseChan <- &implementationResponse
 }
 
 type ImplementationRequestInterface interface {
 	NewRequest(filePath string, line, character, id int) *ImplementationRequest
-	SendRequest(requestChan chan Request)
-	ReadResponse(responseChan chan *ImplementationResponse)
+	SendRequest(requestChan chan Request, responseChan chan map[string]interface{})
+	ReadResponse(implementationResponseChan chan *ImplementationResponse, responseChan chan map[string]interface{})
 }

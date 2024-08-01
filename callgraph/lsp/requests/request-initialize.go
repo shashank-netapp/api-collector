@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/theshashankpal/api-collector/utlis"
+	"github.com/theshashankpal/api-collector/utils"
 	"io"
 	"net"
 )
@@ -80,7 +80,7 @@ func (r *InitializeRequest) SendRequest(conn net.Conn) error {
 		return err
 	}
 
-	request := utlis.ConstructRequest(requestJSON)
+	request := utils.ConstructRequest(requestJSON)
 
 	// Send the request
 	_, err = fmt.Fprintf(conn, request)
@@ -93,7 +93,7 @@ func (r *InitializeRequest) SendRequest(conn net.Conn) error {
 
 func (r *InitializeRequest) ReadResponse(reader *bufio.Reader) (*InitializeResponse, error) {
 	for {
-		contentLength, err := utlis.FindTheContentLength(reader)
+		contentLength, err := utils.FindTheContentLength(reader)
 		if err != nil {
 			return nil, err
 		}

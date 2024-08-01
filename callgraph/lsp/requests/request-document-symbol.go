@@ -61,10 +61,10 @@ type DocumentSymbolResult struct {
 }
 
 type DocumentSymbolResponse struct {
-	Jsonrpc string               `json:"jsonrpc"`
-	Result  DocumentSymbolResult `json:"result"`
-	ID      int                  `json:"id"`
-	Error   *ResponseError       `json:"error"`
+	Jsonrpc string                 `json:"jsonrpc"`
+	Result  []DocumentSymbolResult `json:"result"`
+	ID      int                    `json:"id"`
+	Error   *ResponseError         `json:"error"`
 }
 
 func (r *DocumentSymbolRequest) NewRequest(filePath string, id int) *DocumentSymbolRequest {

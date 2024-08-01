@@ -77,8 +77,9 @@ const (
 	LspReservedErrorRangeEnd = -32800
 
 	// Don't know the codes, I've assigned them arbitrarily.
-	JsonMarshalError   = -32106
-	JsonUnMarshalError = -32107
+	JsonMarshalError                 = -32106
+	JsonUnMarshalError               = -32107
+	EmptyCallHierarchPrepareResponse = -32108
 )
 
 type ResponseError struct {

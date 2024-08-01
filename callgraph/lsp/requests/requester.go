@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 
-	"github.com/theshashankpal/api-collector/utlis"
+	"github.com/theshashankpal/api-collector/utils"
 )
 
 type Request struct {
@@ -17,16 +18,18 @@ type Request struct {
 }
 
 type Requester struct {
-	reader          *bufio.Reader
-	neededRequests  map[int]struct{}
-	cachedResponses map[int]map[string]interface{}
+	reader           *bufio.Reader
+	neededRequests   map[int]struct{}
+	neededRequestsMU *sync.Mutex
+	cachedResponses  map[int]map[string]interface{}
 }
 
 func NewRequester(reader *bufio.Reader, requestChan chan Request, responseChan chan Request, conn net.Conn) *Requester {
 	requester := &Requester{
-		reader:          reader,
-		neededRequests:  make(map[int]struct{}),
-		cachedResponses: make(map[int]map[string]interface{}),
+		reader:           reader,
+		neededRequests:   make(map[int]struct{}),
+		cachedResponses:  make(map[int]map[string]interface{}),
+		neededRequestsMU: new(sync.Mutex),
 	}
 
 	// Start the go routines
@@ -46,13 +49,16 @@ func (r *Requester) submitRequest(request chan Request, responseReader chan Requ
 			} else {
 				// Send the request
 				requestJSON, err := json.Marshal(req.request)
-				_, err = fmt.Fprintf(conn, string(requestJSON))
+				requestWithHeader := utils.ConstructRequest(requestJSON)
+				_, err = fmt.Fprintf(conn, requestWithHeader)
 				if err != nil {
 					fmt.Printf("error sending request with request id %d : %v\n", req.id, err)
 				}
 
 				// Save it in the needed map
+				r.neededRequestsMU.Lock()
 				r.neededRequests[req.id] = struct{}{}
+				r.neededRequestsMU.Unlock()
 
 				// Now signal readReponse go routine that you can try to read the response of this request.
 				responseReader <- req
@@ -67,17 +73,18 @@ func (r *Requester) readResponse(responseReader chan Request) {
 		case req := <-responseReader:
 			// Read the response
 			for {
-
 				// Check whether we have the response for this request cached or not?
 				if _, ok := r.cachedResponses[req.id]; ok {
 					req.responseChan <- r.cachedResponses[req.id]
 					// Now we've served the response, remove it from the cache and needed map
 					delete(r.cachedResponses, req.id)
+					r.neededRequestsMU.Lock()
 					delete(r.neededRequests, req.id)
+					r.neededRequestsMU.Unlock()
 					break
 				}
 
-				contentLength, err := utlis.FindTheContentLength(r.reader)
+				contentLength, err := utils.FindTheContentLength(r.reader)
 				if err != nil {
 					fmt.Printf("Error finding content length of request id %d : %v\n", req.id, err)
 				}
@@ -100,23 +107,27 @@ func (r *Requester) readResponse(responseReader chan Request) {
 					continue
 				}
 
-				id := message["id"].(int)
+				id := int(message["id"].(float64))
 
 				// Check whether we even require this response or not
+				r.neededRequestsMU.Lock()
 				if _, ok := r.neededRequests[id]; !ok {
 					// not of need, ignore it
+					r.neededRequestsMU.Unlock()
 					continue
 				}
+				r.neededRequestsMU.Unlock()
 
 				// See whether this response is of the request we are looking for
 				if id == req.id {
 					req.responseChan <- message
+					r.neededRequestsMU.Lock()
 					delete(r.neededRequests, req.id)
+					r.neededRequestsMU.Unlock()
 					break
 				} else {
 					// cache this response
 					r.cachedResponses[id] = message
-					break
 				}
 			}
 		}

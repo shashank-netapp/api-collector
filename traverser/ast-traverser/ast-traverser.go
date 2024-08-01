@@ -2,81 +2,90 @@ package ast_traverser
 
 import (
 	"context"
-	"go/ast"
-	"strings"
 	"sync"
 
 	. "github.com/theshashankpal/api-collector/callgraph"
-	"github.com/theshashankpal/api-collector/loader"
 	. "github.com/theshashankpal/api-collector/logger"
+	. "github.com/theshashankpal/api-collector/traverser/ast-traverser/dfs"
 )
 
 var tf = LogFields{Key: "layer", Value: "traverser"}
 
-var dir = "/Users/shashank/Library/CloudStorage/OneDrive-NetAppInc/Documents/Astra/TRID-POLLING-NEW/trident/storage_drivers/ontap/api/..."
-var visited = make(map[string]struct{})
-var wg sync.WaitGroup
-var mutex sync.Mutex
-var fileMap = make(map[string]*ast.File)
-var apiMap = make(map[string][]string)
-
+// Search in an interface which will be implemented by DfsTraverser/BfsTraverser.
 type Search interface {
-	traverseZAPI(ctx context.Context)
-	traverseREST(ctx context.Context)
+	Initialize(ctx context.Context, done chan bool)
+	Traverse(ctx context.Context, mapChan chan map[string][]string)
 }
 
 type AstTraverser struct {
-	workDir   string
-	fileMap   map[string]*ast.File
-	callGraph CallGraph
-	search    Search
-	pack      []*loader.Package
+	workDir       string
+	callGraph     CallGraph
+	zapi          bool
+	rest          bool
+	restTraverser Search
+	zapiTraverser Search
 }
 
-func NewAstTraverser(workDir string, callGraph CallGraph, search Search) *AstTraverser {
+func NewAstTraverser(workDir string, callGraph CallGraph, rest bool, zapi bool) *AstTraverser {
 	return &AstTraverser{
 		workDir:   workDir,
-		fileMap:   make(map[string]*ast.File),
 		callGraph: callGraph,
-		search:    search,
+		rest:      rest,
+		zapi:      zapi,
 	}
 }
 
-func (t *AstTraverser) LoadPackages(ctx context.Context) error {
-	// Load the package.
-	Log(ctx, tf).Debug().Msgf("Loading packages at work direcrory : %s", t.workDir)
-	pack, err := loader.LoadRoots(t.workDir)
-	if err != nil {
-		return err
+func (t *AstTraverser) Initialize(ctx context.Context) {
+
+	// Because we are using the same callGraph for both REST and ZAPI recursers, we need to lock it
+	callGraphMU := new(sync.Mutex)
+	if t.rest {
+		Log(ctx, tf).Debug().Msg("Creating a new REST recurser")
+		t.restTraverser = NewDfsTraverser(t.callGraph, callGraphMU, t.workDir, RESTRecurserType)
 	}
 
-	Log(ctx, tf).Debug().Msgf("Loading ast syntax for packages at `github.com/netapp/trident/storage_drivers/ontap/api`")
-	for _, pkg := range pack {
-		// Adding only the package which contains api calls
-		if strings.Contains(pkg.PkgPath, "github.com/netapp/trident/storage_drivers/ontap/api") {
-			pkg.NeedSyntax()
-			for _, file := range pkg.Syntax {
-				t.fileMap[pkg.Fset.File(file.Package).Name()] = file
-			}
-		}
+	if t.zapi {
+		Log(ctx, tf).Debug().Msg("Creating a new ZAPI recurser")
+		t.zapiTraverser = NewDfsTraverser(t.callGraph, callGraphMU, t.workDir, ZAPIRecurserType)
 	}
 
-	t.pack = pack
+	var (
+		restTraverserInitialized chan bool
+		zapiTraverserInitialized chan bool
+	)
 
-	Log(ctx, tf).Debug().Msgf("Packages at `github.com/netapp/trident/storage_drivers/ontap/api` loaded successfully")
-	return nil
+	if t.rest {
+		restTraverserInitialized = make(chan bool)
+		go t.restTraverser.Initialize(ctx, restTraverserInitialized)
+	}
+
+	if t.zapi {
+		zapiTraverserInitialized = make(chan bool)
+		go t.zapiTraverser.Initialize(ctx, zapiTraverserInitialized)
+	}
+
+	if t.rest {
+		<-restTraverserInitialized
+	}
+
+	if t.zapi {
+		<-zapiTraverserInitialized
+	}
+
+	Log(ctx, tf).Debug().Msg("Initialization of traversers was successful")
 }
 
-func (t *AstTraverser) Traverse(ctx context.Context, traverseREST, traverseZAPI bool) {
+func (t *AstTraverser) Traverse(ctx context.Context) (chan map[string][]string, chan map[string][]string) {
+	restAPIsMapChan := make(chan map[string][]string)
+	zapiCommandsMapChan := make(chan map[string][]string)
 
-	if traverseREST {
-		go t.search.traverseREST(ctx)
+	if t.rest {
+		t.restTraverser.Traverse(ctx, restAPIsMapChan)
 	}
 
-	if traverseZAPI {
-		go t.search.traverseZAPI(ctx)
+	if t.zapi {
+		t.zapiTraverser.Traverse(ctx, zapiCommandsMapChan)
 	}
 
-	// Wait here using wait group
-
+	return restAPIsMapChan, zapiCommandsMapChan
 }

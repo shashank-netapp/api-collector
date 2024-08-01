@@ -55,10 +55,10 @@ type CallHierarchyItem struct {
 }
 
 type CallHierarchyPrepareResponse struct {
-	Jsonrpc string            `json:"jsonrpc"`
-	Result  CallHierarchyItem `json:"result"`
-	ID      int               `json:"id"`
-	Error   *ResponseError    `json:"error"`
+	Jsonrpc string              `json:"jsonrpc"`
+	Result  []CallHierarchyItem `json:"result"`
+	ID      int                 `json:"id"`
+	Error   *ResponseError      `json:"error"`
 }
 
 func (r *CallHierarchyPrepareRequest) NewRequest(fileName string, line, character, id int) *CallHierarchyPrepareRequest {
@@ -82,21 +82,20 @@ func (r *CallHierarchyPrepareRequest) NewRequest(fileName string, line, characte
 	}
 }
 
-func (r *CallHierarchyPrepareRequest) SendRequest(requestChan chan Request) {
+func (r *CallHierarchyPrepareRequest) SendRequest(requestChan chan Request, responseChan chan map[string]interface{}) {
 	// Form the Request
-	r.responseChan = make(chan map[string]interface{})
 	request := Request{
 		request:      *r,
 		id:           r.ID,
-		responseChan: r.responseChan,
+		responseChan: responseChan,
 	}
 
 	// Send the request
 	requestChan <- request
 }
 
-func (r *CallHierarchyPrepareRequest) ReadResponse(callHierarchyPrepareResponseChan chan *CallHierarchyPrepareResponse) {
-	response := <-r.responseChan
+func (r *CallHierarchyPrepareRequest) ReadResponse(callHierarchyPrepareResponseChan chan *CallHierarchyPrepareResponse, responseChan chan map[string]interface{}) {
+	response := <-responseChan
 
 	bytes, err := json.Marshal(response)
 	if err != nil {
@@ -133,6 +132,6 @@ func (r *CallHierarchyPrepareRequest) ReadResponse(callHierarchyPrepareResponseC
 
 type CallHierarchyPrepareRequestInterface interface {
 	NewRequest(fileName string, line, character, id int) *CallHierarchyPrepareRequest
-	SendRequest(requestChan chan Request)
-	ReadResponse(callHierarchyPrepareResponseChan chan *CallHierarchyPrepareResponse)
+	SendRequest(requestChan chan Request, responseChan chan map[string]interface{})
+	ReadResponse(callHierarchyPrepareResponseChan chan *CallHierarchyPrepareResponse, responseChan chan map[string]interface{})
 }

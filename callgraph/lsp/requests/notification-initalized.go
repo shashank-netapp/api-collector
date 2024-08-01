@@ -8,7 +8,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/theshashankpal/api-collector/utlis"
+	"github.com/theshashankpal/api-collector/utils"
 )
 
 type InitializedParams struct {
@@ -35,7 +35,7 @@ func (r *InitializedNotification) SendRequest(conn net.Conn) error {
 		return err
 	}
 
-	request := utlis.ConstructRequest(requestJSON)
+	request := utils.ConstructRequest(requestJSON)
 
 	// Send the request
 	_, err = fmt.Fprintf(conn, request)
@@ -48,7 +48,7 @@ func (r *InitializedNotification) SendRequest(conn net.Conn) error {
 
 func (r *InitializedNotification) ReadResponse(reader *bufio.Reader) error {
 	for {
-		contentLength, err := utlis.FindTheContentLength(reader)
+		contentLength, err := utils.FindTheContentLength(reader)
 		if err != nil {
 			return err
 		}

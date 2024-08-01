@@ -52,21 +52,20 @@ func (r *CallHierarchyOutgoingCallRequest) NewRequest(callHierarchyItem CallHier
 	}
 }
 
-func (r *CallHierarchyOutgoingCallRequest) SendRequest(requestChan chan Request) {
+func (r *CallHierarchyOutgoingCallRequest) SendRequest(requestChan chan Request, responseChan chan map[string]interface{}) {
 	// Form the Request
-	r.responseChan = make(chan map[string]interface{})
 	request := Request{
 		request:      *r,
 		id:           r.ID,
-		responseChan: r.responseChan,
+		responseChan: responseChan,
 	}
 
 	// Send the request
 	requestChan <- request
 }
 
-func (r *CallHierarchyOutgoingCallRequest) ReadResponse(callHierarchyOutgoingCallResponseChan chan *CallHierarchyOutgoingCallResponse) {
-	response := <-r.responseChan
+func (r *CallHierarchyOutgoingCallRequest) ReadResponse(callHierarchyOutgoingCallResponseChan chan *CallHierarchyOutgoingCallResponse, responseChan chan map[string]interface{}) {
+	response := <-responseChan
 
 	bytes, err := json.Marshal(response)
 	if err != nil {
@@ -102,6 +101,6 @@ func (r *CallHierarchyOutgoingCallRequest) ReadResponse(callHierarchyOutgoingCal
 
 type CallHierarchyOutgoingCallRequestInterface interface {
 	NewRequest(callHierarchyItem CallHierarchyItem, id int) *CallHierarchyOutgoingCallRequest
-	SendRequest(requestChan chan Request)
-	ReadResponse(callHierarchyOutgoingCallResponseChan chan *CallHierarchyOutgoingCallResponse)
+	SendRequest(requestChan chan Request, responseChan chan map[string]interface{})
+	ReadResponse(callHierarchyOutgoingCallResponseChan chan *CallHierarchyOutgoingCallResponse, responseChan chan map[string]interface{})
 }

@@ -105,8 +105,9 @@ func (l *LSP) OutgoingCalls(ctx context.Context, filePath string, line, characte
 	go func() {
 		callHierarchyPrepareResponseChan := make(chan *CallHierarchyPrepareResponse)
 		callHierarchyPrepareRequest = callHierarchyPrepareRequest.NewRequest(filePath, line, character, int(uuid.New().ID()))
-		go callHierarchyPrepareRequest.SendRequest(l.requestChan)
-		go callHierarchyPrepareRequest.ReadResponse(callHierarchyPrepareResponseChan)
+		responseChan := make(chan map[string]interface{})
+		go callHierarchyPrepareRequest.SendRequest(l.requestChan, responseChan)
+		go callHierarchyPrepareRequest.ReadResponse(callHierarchyPrepareResponseChan, responseChan)
 
 		// Wait for the call hierarchy prepare response
 		callHierarchyPrepareResponse := <-callHierarchyPrepareResponseChan
@@ -124,9 +125,22 @@ func (l *LSP) OutgoingCalls(ctx context.Context, filePath string, line, characte
 		}
 
 		// Now need to get the actual outgoing calls
-		callHierarchyOutgoingCallRequest = callHierarchyOutgoingCallRequest.NewRequest(callHierarchyPrepareResponse.Result, int(uuid.New().ID()))
-		go callHierarchyOutgoingCallRequest.SendRequest(l.requestChan)
-		go callHierarchyOutgoingCallRequest.ReadResponse(callHierarchyOutgoingCallChan)
+		if len(callHierarchyPrepareResponse.Result) == 0 {
+			// Send back the error
+			tempCallHierarchyOutgoingCallChan := &CallHierarchyOutgoingCallResponse{
+				Error: &ResponseError{
+					Code:    EmptyCallHierarchPrepareResponse,
+					Message: fmt.Sprintf("OutgoingCalls: call hierarchy prerpare resonse is empty"),
+				},
+			}
+
+			callHierarchyOutgoingCallChan <- tempCallHierarchyOutgoingCallChan
+			return
+		}
+		callHierarchyOutgoingCallRequest = callHierarchyOutgoingCallRequest.NewRequest(callHierarchyPrepareResponse.Result[0], int(uuid.New().ID()))
+		responseChan = make(chan map[string]interface{})
+		go callHierarchyOutgoingCallRequest.SendRequest(l.requestChan, responseChan)
+		go callHierarchyOutgoingCallRequest.ReadResponse(callHierarchyOutgoingCallChan, responseChan)
 	}()
 
 	return callHierarchyOutgoingCallChan
@@ -139,8 +153,9 @@ func (l *LSP) Implementations(ctx context.Context, filePath string, line, charac
 
 	implementationRequest = implementationRequest.NewRequest(filePath, line, character, int(uuid.New().ID()))
 
-	go implementationRequest.SendRequest(l.requestChan)
-	go implementationRequest.ReadResponse(implementationResponseChan)
+	tempResponseChan := make(chan map[string]interface{})
+	go implementationRequest.SendRequest(l.requestChan, tempResponseChan)
+	go implementationRequest.ReadResponse(implementationResponseChan, tempResponseChan)
 
 	return implementationResponseChan
 }

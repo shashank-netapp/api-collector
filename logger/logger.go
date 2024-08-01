@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -21,15 +20,20 @@ var once sync.Once
 
 var log zerolog.Logger
 
-func Get() zerolog.Logger {
+func Logger(logLevel string) zerolog.Logger {
 	once.Do(func() {
 		zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 		zerolog.TimeFieldFormat = time.RFC3339Nano
 
-		logLevel, err := strconv.Atoi(os.Getenv("LOG_LEVEL"))
+		level, err := zerolog.ParseLevel(logLevel)
 		if err != nil {
-			logLevel = int(zerolog.DebugLevel) // default to INFO
+			panic(err)
 		}
+
+		//logLevel, err := strconv.Atoi(os.Getenv("LOG_LEVEL"))
+		//if err != nil {
+		//	logLevel = int(zerolog.DebugLevel) // default to Debug
+		//}
 
 		var output io.Writer = zerolog.ConsoleWriter{
 			Out:        os.Stdout,
@@ -41,7 +45,7 @@ func Get() zerolog.Logger {
 		//}
 
 		log = zerolog.New(output).
-			Level(zerolog.Level(logLevel)).
+			Level(level).
 			With().
 			Timestamp().
 			Caller().
