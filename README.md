@@ -1,2 +1,2 @@
 # api-collector
-Collects rest api calls that are made by trident
+Collects rest api calls and zapi commands that are made by trident
