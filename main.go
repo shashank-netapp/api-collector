@@ -1,258 +1,168 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
+	"context"
+	"flag"
 	"fmt"
-	"log"
 	"net"
-	"net/http"
 	"os"
-	"strconv"
 	"strings"
+	"sync"
+
+	. "github.com/theshashankpal/api-collector/callgraph"
+	. "github.com/theshashankpal/api-collector/callgraph/lsp"
+	. "github.com/theshashankpal/api-collector/logger"
+	. "github.com/theshashankpal/api-collector/traverser"
+	. "github.com/theshashankpal/api-collector/traverser/ast-traverser"
 )
 
-var conn net.Conn
-var err error
-var id = 0
+var m = LogFields{Key: "layer", Value: "main"}
+
+var (
+	rest              = flag.Bool("rest", false, "Scrape REST api endpoints")
+	zapi              = flag.Bool("zapi", false, "Scrape ZAPI commands")
+	workDir           = flag.String("work_dir", "", "Absolute path of the root of the Trident")
+	goplsAddress      = flag.String("gopls", "", "Address where the GOPLS server is running")
+	logLevel          = flag.String("log_level", "info", "Provide the level for logger, default is INFO")
+	restAPIOutputFile = flag.String("rest_out", "rest_apis.json", "Output file for REST APIs, json format")
+	zapiOutputFile    = flag.String("zapi_out", "zapi_commands.json", "Output file for ZAPI commands, json format")
+)
 
 func main() {
-	// Establish a TCP connection to gopls server
 
-	//findTehDifference()
+	ctx := context.Background()
 
-	conn, err = net.Dial("tcp", "localhost:7070")
+	flag.Parse()
+
+	Logger(*logLevel)
+
+	if err := validateFlags(); err != nil {
+		Log(ctx, m).Error().Msg(err.Error())
+		return
+	}
+
+	flag.Visit(printFlag)
+
+	workDirTraverser := getWorkDirTraverser(*workDir)
+
+	//Establish a TCP connection to gopls server
+	Log(ctx, m).Info().Msgf("Establishing a TCP connection to gopls server at %s", *goplsAddress)
+	conn, err := net.Dial("tcp", *goplsAddress)
 	if err != nil {
-		fmt.Println("Failed to connect to gopls server:", err)
+		Log(ctx, m).Error().Msgf("Failed to establish a TCP connection to gopls server at %s", *goplsAddress)
 		return
 	}
 	defer conn.Close()
+	Log(ctx, m).Info().Msgf("Connection to gopls server established at %s", *goplsAddress)
 
-	fmt.Println("Sending initialize request")
-	err = sendInitializeRequest(conn, "/Users/shashank/Library/CloudStorage/OneDrive-NetAppInc/Documents/Astra/TRID-POLLING-NEW/trident/")
+	// Creating call-graph
+	Log(ctx, m).Info().Msg("Creating a call-graph")
+	var callGraph CallGraph
+	callGraph = NewAbstractionLSP(ctx, conn, *workDir, "trident")
 
-	fmt.Println("Sending initialized notification")
-
-	err = sendInitializedNotification(conn)
+	// Initialize call-graph
+	Log(ctx, m).Debug().Msg("Initializing call-graph instance")
+	err = callGraph.Initialize(ctx)
 	if err != nil {
-		fmt.Println("Failed to send initialized notification:", err)
+		Log(ctx, m).Error().Msg("Failed to initialize call-graph instance")
 		return
 	}
-	fmt.Println("Initialized")
-	traverse([]string{})
-	//
-	//http.HandleFunc("/callees", findCallees)
-	//http.HandleFunc("/reference", findReferences)
-	//http.HandleFunc("/implementation", findImplementation)
-	//
-	//fmt.Println("Starting server on localhost:9000")
-	//err = http.ListenAndServe(":9000", nil)
-	//if err != nil {
-	//	fmt.Println("Error starting server: ", err)
-	//}
+	Log(ctx, m).Info().Msg("Call-graph is created")
 
+	// Creating a traverser and initializing it.
+	Log(ctx, m).Info().Msg("Creating a new traverser")
+	var traverser Traverser
+	traverser = NewAstTraverser(workDirTraverser, callGraph, *rest, *zapi)
+	Log(ctx, m).Info().Msg("Traverser created")
+
+	Log(ctx, m).Info().Msg("Initializing traverser")
+	traverser.Initialize(ctx)
+	Log(ctx, m).Info().Msg("Traverser initialized")
+
+	// Traversing
+	Log(ctx, m).Info().
+		Str("workDir", *workDir).
+		Bool("zapi", *zapi).
+		Bool("rest", *rest).
+		Msg("Traversing...")
+	restAPIsMapChan, zapiCommandsMapChan := traverser.Traverse(ctx)
+
+	//Log(ctx, m).Info().Msg("Traversing completed, writing to files")
+	tempWg := new(sync.WaitGroup)
+	if *rest {
+		tempWg.Add(1)
+		go func() {
+			defer tempWg.Done()
+			file, err := os.Create(*restAPIOutputFile)
+			if err != nil {
+				Log(ctx, m).Error().Msgf("Failed to create file %s", *restAPIOutputFile)
+				return
+			}
+
+			restAPIsMap := <-restAPIsMapChan
+			Log(ctx, rst).Info().Msgf("Retrieved restAPIsMap from the channel")
+			Log(ctx, m).Info().Msgf("Writing REST APIs to the file :%s", *restAPIOutputFile)
+			err = WriteRESTAPIs(ctx, restAPIsMap, file)
+			if err != nil {
+				Log(ctx, m).Error().Msgf("Failed to write REST APIs to file %s", *restAPIOutputFile)
+				return
+			}
+			Log(ctx, m).Info().Msgf("REST APIs written to the file")
+		}()
+	}
+
+	if *zapi {
+		tempWg.Add(1)
+		go func() {
+			defer tempWg.Done()
+			file, err := os.Create(*zapiOutputFile)
+			if err != nil {
+				Log(ctx, m).Error().Msgf("Failed to create file %s", *zapiOutputFile)
+				return
+			}
+
+			zapiCommandsMap := <-zapiCommandsMapChan
+			Log(ctx, rst).Info().Msgf("Retrieved zapiCommandMap from the channel")
+			Log(ctx, m).Info().Msgf("Writing ZAPI commands to the file :%s", *zapiOutputFile)
+			err = WriteZAPICommands(ctx, zapiCommandsMap, file)
+			if err != nil {
+				Log(ctx, m).Error().Msgf("Failed to write ZAPI commands to file %s", *zapiOutputFile)
+				return
+			}
+			Log(ctx, m).Info().Msgf("ZAPI Commands are written to the file")
+		}()
+	}
+
+	tempWg.Wait()
 }
 
-func findCallees(fileName string, line, character int) ([]CallHierarchyOutgoingCall, error) {
-	// Parse the query parameters for function name and file name
-	//fileName := r.URL.Query().Get("file")
-	//line := r.URL.Query().Get("line")
-	//character := r.URL.Query().Get("character")
-	//
-	//// Check if function name and file name are provided
-	//if fileName == "" || line == "" || character == "" {
-	//	http.Error(w, "Missing file name or line or character", http.StatusBadRequest)
-	//	return
-	//}
-	//
-	//// Convert the line and character to integers
-	//lineInt, err := strconv.Atoi(line)
-	//if err != nil {
-	//	http.Error(w, "Invalid line number", http.StatusBadRequest)
-	//	return
-	//}
-	//
-	//characterInt, err := strconv.Atoi(character)
-	//if err != nil {
-	//	http.Error(w, "Invalid character number", http.StatusBadRequest)
-	//	return
-	//}
-
-	id++
-	callHierarchyItem, err := prepareCallHierarchy(fileName, line, character, id, conn)
-	if err != nil {
-		//fmt.Println("Failed to prepare call hierarchy:", err)
-		//http.Error(w, "Failed to prepare call hierarchy", http.StatusInternalServerError)
-		return nil, err
-	}
-
-	id++
-	outgoinCalls, err := getOutgoingCalls(callHierarchyItem, id, conn)
-	if err != nil {
-		//fmt.Println("Failed to get outgoing calls:", err)
-		//http.Error(w, "Failed to get outgoing calls", http.StatusInternalServerError)
-		return nil, err
-	}
-
-	// Convert the list of callers to a JSON array
-	//outgoinCallsJSON, err := json.Marshal(findCalleesResponse{Callees: outgoinCalls})
-	//if err != nil {
-	//	//http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
-	//	return nil,err
-	//}
-
-	return outgoinCalls, nil
-
-	// Write the JSON array to the response
-	//w.Header().Set("Content-Type", "application/json")
-	//w.Write(outgoinCallsJSON)
+func printFlag(f *flag.Flag) {
+	Log(context.Background(), m).Debug().
+		Str("Flag", f.Name).
+		Str("Value", f.Value.String()).
+		Send()
 }
 
-type findCalleesResponse struct {
-	Callees []CallHierarchyOutgoingCall `json:"callees"`
+func getWorkDirTraverser(path string) string {
+	if strings.HasSuffix(path, "/") {
+		path = path[:len(path)-1]
+	}
+	path = path + "/..."
+	return path
 }
 
-func findReferences(w http.ResponseWriter, r *http.Request) {
-	// Parse the query parameters for function name and file name
-	fileName := r.URL.Query().Get("file")
-	line := r.URL.Query().Get("line")
-	character := r.URL.Query().Get("character")
-
-	// Check if function name and file name are provided
-	if fileName == "" || line == "" || character == "" {
-		http.Error(w, "Missing file name or line or character", http.StatusBadRequest)
-		return
+func validateFlags() error {
+	if *rest == false && *zapi == false {
+		return fmt.Errorf("at least one of the flags -rest or -zapi must be set")
 	}
 
-	// Convert the line and character to integers
-	lineInt, err := strconv.Atoi(line)
-	if err != nil {
-		http.Error(w, "Invalid line number", http.StatusBadRequest)
-		return
+	if *workDir == "" {
+		return fmt.Errorf("flag -work_dir must be set")
 	}
 
-	characterInt, err := strconv.Atoi(character)
-	if err != nil {
-		http.Error(w, "Invalid character number", http.StatusBadRequest)
-		return
+	if *goplsAddress == "" {
+		return fmt.Errorf("flag -gopls must be set")
 	}
 
-	id++
-	references, err := references(fileName, lineInt, characterInt, id, conn)
-	if err != nil {
-		fmt.Println("Failed to prepare call hierarchy:", err)
-		http.Error(w, "Failed to prepare call hierarchy", http.StatusInternalServerError)
-		return
-	}
-
-	// Convert the list of callers to a JSON array
-	referencesJSON, err := json.Marshal(referencesResponse{References: references})
-	if err != nil {
-		http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
-		return
-	}
-
-	// Write the JSON array to the response
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(referencesJSON)
-}
-
-type referencesResponse struct {
-	References []Location `json:"references"`
-}
-
-func findImplementation(fileName string, line, character int) ([]Location, error) {
-
-	id++
-	implementation, err := getImplementation(fileName, line, character, id, conn)
-	if err != nil {
-		return nil, err
-	}
-
-	return implementation, nil
-}
-
-type implementationResponse struct {
-	Implementations []Location `json:"locations"`
-}
-
-func getAllTheSymbols(fileName string) ([]DocumentSymbolReponse, error) {
-	id++
-	symbols, err := findAllTheSymbols(fileName, id, conn)
-	if err != nil {
-		return nil, err
-	}
-
-	return symbols, nil
-}
-
-func findTehDifference() {
-	file1, err := os.OpenFile("api.txt", os.O_RDONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed opening file: %s", err)
-	}
-	defer file1.Close()
-
-	file2, err := os.OpenFile("api_Copy.txt", os.O_RDONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed opening file: %s", err)
-	}
-	defer file2.Close()
-
-	var list1 []string
-	var list2 []string
-	map1 := make(map[string][]string)
-	map2 := make(map[string][]string)
-
-	scanner := bufio.NewScanner(file1)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, ":")
-		temp := []string{strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])}
-		key := strings.TrimSpace(parts[0])
-		map1[key] = temp
-	}
-
-	scanner = bufio.NewScanner(file2)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, ":")
-		temp := []string{strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])}
-		key := strings.TrimSpace(parts[0])
-		map2[key] = temp
-	}
-
-	for key, _ := range map1 {
-		list1 = append(list1, key)
-	}
-
-	for key, _ := range map2 {
-		list2 = append(list2, key)
-	}
-
-	missingElements := findMissingElements(list2, list1)
-	fmt.Println("Missing elements from list2 in list1:", missingElements)
-
-	missingElements = findMissingElements(list1, list2)
-	fmt.Println("Missing elements from list1 in list2:", missingElements)
-
-}
-
-func findMissingElements(list1, list2 []string) []string {
-	elementMap := make(map[string]bool)
-	missingElements := []string{}
-
-	// Mark elements from list1 in the map
-	for _, item := range list1 {
-		elementMap[item] = true
-	}
-
-	// Check for missing elements from list2 in list1
-	for _, item := range list2 {
-		if _, found := elementMap[item]; !found {
-			missingElements = append(missingElements, item)
-		}
-	}
-
-	return missingElements
+	return nil
 }
