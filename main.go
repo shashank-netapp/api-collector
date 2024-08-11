@@ -49,7 +49,7 @@ func main() {
 	Log(ctx, m).Info().Msgf("Establishing a TCP connection to gopls server at %s", *goplsAddress)
 	conn, err := net.Dial("tcp", *goplsAddress)
 	if err != nil {
-		Log(ctx, m).Error().Msgf("Failed to establish a TCP connection to gopls server at %s", *goplsAddress)
+		Log(ctx, m).Error().Err(err).Msgf("Failed to establish a TCP connection to gopls server at %s", *goplsAddress)
 		return
 	}
 	defer conn.Close()
@@ -64,7 +64,7 @@ func main() {
 	Log(ctx, m).Debug().Msg("Initializing call-graph instance")
 	err = callGraph.Initialize(ctx)
 	if err != nil {
-		Log(ctx, m).Error().Msg("Failed to initialize call-graph instance")
+		Log(ctx, m).Error().Err(err).Msg("Failed to initialize call-graph instance")
 		return
 	}
 	Log(ctx, m).Info().Msg("Call-graph is created")
@@ -95,7 +95,7 @@ func main() {
 			defer tempWg.Done()
 			file, err := os.Create(*restAPIOutputFile)
 			if err != nil {
-				Log(ctx, m).Error().Msgf("Failed to create file %s", *restAPIOutputFile)
+				Log(ctx, m).Error().Err(err).Msgf("Failed to create file %s", *restAPIOutputFile)
 				return
 			}
 
@@ -104,7 +104,7 @@ func main() {
 			Log(ctx, m).Info().Msgf("Writing REST APIs to the file :%s", *restAPIOutputFile)
 			err = WriteRESTAPIs(ctx, restAPIsMap, file)
 			if err != nil {
-				Log(ctx, m).Error().Msgf("Failed to write REST APIs to file %s", *restAPIOutputFile)
+				Log(ctx, m).Error().Err(err).Msgf("Failed to write REST APIs to file %s", *restAPIOutputFile)
 				return
 			}
 			Log(ctx, m).Info().Msgf("REST APIs written to the file")
@@ -117,7 +117,7 @@ func main() {
 			defer tempWg.Done()
 			file, err := os.Create(*zapiOutputFile)
 			if err != nil {
-				Log(ctx, m).Error().Msgf("Failed to create file %s", *zapiOutputFile)
+				Log(ctx, m).Error().Err(err).Msgf("Failed to create file %s", *zapiOutputFile)
 				return
 			}
 
@@ -126,7 +126,7 @@ func main() {
 			Log(ctx, m).Info().Msgf("Writing ZAPI commands to the file :%s", *zapiOutputFile)
 			err = WriteZAPICommands(ctx, zapiCommandsMap, file)
 			if err != nil {
-				Log(ctx, m).Error().Msgf("Failed to write ZAPI commands to file %s", *zapiOutputFile)
+				Log(ctx, m).Error().Err(err).Msgf("Failed to write ZAPI commands to file %s", *zapiOutputFile)
 				return
 			}
 			Log(ctx, m).Info().Msgf("ZAPI Commands are written to the file")

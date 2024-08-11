@@ -37,6 +37,7 @@ func NewAstTraverser(workDir string, callGraph CallGraph, rest bool, zapi bool) 
 
 func (t *AstTraverser) Initialize(ctx context.Context) {
 
+	// TODO: check whether even we need lock for callgraph or not.
 	// Because we are using the same callGraph for both REST and ZAPI recursers, we need to lock it
 	callGraphMU := new(sync.Mutex)
 	if t.rest {
@@ -54,6 +55,7 @@ func (t *AstTraverser) Initialize(ctx context.Context) {
 		zapiTraverserInitialized chan bool
 	)
 
+	// TODO: Somehow combine initialization of both traversers.
 	if t.rest {
 		restTraverserInitialized = make(chan bool)
 		go t.restTraverser.Initialize(ctx, restTraverserInitialized)
