@@ -42,7 +42,14 @@ func WriteZAPICommands(ctx context.Context, zapiCommandsMap map[string][]string,
 		var accessLevel string
 		if tempString == "show" {
 			accessLevel = "readonly"
+			ontapCommand = strings.Join(tempParts[:len(tempParts)-1], " ")
 		} else {
+			accessLevel = "all"
+		}
+
+		// Inserting this temp check, for the bug, lun modify,
+		// whenever that gets fixed, this can be removed.
+		if ontapCommand == "lun" {
 			accessLevel = "all"
 		}
 

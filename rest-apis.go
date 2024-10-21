@@ -58,6 +58,15 @@ func WriteRESTAPIs(ctx context.Context, restAPIsMap map[string][]string, file *o
 		restAPIsList.APIs = append(restAPIsList.APIs, tempRestAPIs)
 	}
 
+	// bug, check when this gets solved, remove the following lines.
+	tempRestCLIApis := RestAPIs{
+		Method:      "/api/private/cli/vserver/nvme/subsystem/delete",
+		API:         "DELETE",
+		AccessLevel: "all",
+	}
+
+	restAPIsList.APIs = append(restAPIsList.APIs, tempRestCLIApis)
+
 	jsonData, err := json.MarshalIndent(restAPIsList, "", "    ")
 	if err != nil {
 		return err
